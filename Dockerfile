@@ -1,26 +1,41 @@
-FROM python:3.9-slim
+# Image to simulate Skills Network cloud environment
+FROM ubuntu:18.04
 
-# Added libraries for PostgreSQL before pip install
-RUN apt-get update && apt-get install -y gcc libpq-dev
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Create working folder and install dependencies
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -U pip wheel && \
-    pip install --no-cache-dir -r requirements.txt
+# Add repository for Python 3.8
+RUN apt-get update && \
+    apt-get install -y software-properties-common dirmngr apt-transport-https lsb-release ca-certificates && \
+    add-apt-repository -y ppa:deadsnakes/ppa
 
-# Copy the application contents
-COPY service/ ./service/
+# Add tools and Python 3.8
+RUN apt-get update && \
+    apt-get install -y sudo vim git zip tree curl wget python3.8-dev python3-pip && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1 && \
+    apt-get autoremove -y && \
+    apt-get clean -y
 
-# Switch to a non-root user
-RUN useradd --uid 1000 vagrant && chown -R vagrant /app
-USER vagrant
+# Create a user for development
+ARG USERNAME=theia
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
 
-# Expose any ports the app is expecting in the environment
-ENV FLASK_APP=service:app
-ENV PORT 8080
-EXPOSE $PORT
+# Create the user with passwordless sudo privileges
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME -s /bin/bash \
+    && usermod -aG sudo $USERNAME \
+    && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
+    && chmod 0440 /etc/sudoers.d/$USERNAME
 
-ENV GUNICORN_BIND 0.0.0.0:$PORT
-ENTRYPOINT ["gunicorn"]
-CMD ["--log-level=info", "service:app"]
+# Set up the Python development environment
+WORKDIR /project
+RUN python3 -m pip install --upgrade pip && \
+    pip3 install --upgrade wheel
+
+# Enable color terminal for docker exec bash
+ENV TERM=xterm-256color
+
+EXPOSE 8000
+
+# Become a regular user for development
+USER $USERNAME
